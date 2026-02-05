@@ -1,57 +1,91 @@
-// Level selection screen
+// Font level selection screen
 
 import { Renderer } from '../renderer.js';
 import { InputManager } from '../input.js';
 import { GameScreen } from '../types.js';
+import { FONT_LEVELS } from '../gameData.js';
 
 export class LevelSelectScreen {
   private selectedLevel = 0;
-  private levels = [
-    { name: 'Wave 1', difficulty: 'Easy', duration: '30 seconds' },
-    { name: 'Wave 2', difficulty: 'Medium', duration: '45 seconds' },
-    { name: 'Wave 3', difficulty: 'Hard', duration: '60 seconds' },
-  ];
 
   update(input: InputManager): { screen: GameScreen | null; level?: number } {
-    if (input.wasKeyJustPressed('ArrowUp')) {
+    if (input.isKeyJustPressed('ArrowUp') || input.isKeyJustPressed('KeyW')) {
       this.selectedLevel = Math.max(0, this.selectedLevel - 1);
     }
-    if (input.wasKeyJustPressed('ArrowDown')) {
-      this.selectedLevel = Math.min(this.levels.length - 1, this.selectedLevel + 1);
+    if (input.isKeyJustPressed('ArrowDown') || input.isKeyJustPressed('KeyS')) {
+      this.selectedLevel = Math.min(FONT_LEVELS.length - 1, this.selectedLevel + 1);
     }
-    if (input.wasKeyJustPressed('Enter')) {
-      return { screen: 'game', level: this.selectedLevel + 1 };
+    if (input.isKeyJustPressed('Enter')) {
+      // Only allow selection if unlocked
+      if (FONT_LEVELS[this.selectedLevel].unlocked) {
+        return { screen: 'game', level: this.selectedLevel };
+      }
     }
-    if (input.wasKeyJustPressed('Escape')) {
-      return { screen: 'characterSelect' };
+    if (input.isKeyJustPressed('Escape')) {
+      return { screen: 'menu' };
     }
     return { screen: null };
   }
 
   render(renderer: Renderer): void {
-    renderer.clear();
+    renderer.clear('#000');
 
     // Title
-    renderer.drawText('SELECT WAVE', renderer.canvas.width / 2, 100, 36, '#ff0', 'center');
+    renderer.drawText('SELECT FONT LEVEL', 20, 2, '#0ff', 48);
+    renderer.drawText('Fight through alphabet evolution cycles', 20, 4, '#888', 18);
 
-    // Level options
-    const startY = 250;
-    this.levels.forEach((level, index) => {
-      const y = startY + index * 100;
+    // Font level options
+    const startY = 7;
+    FONT_LEVELS.forEach((fontLevel, index) => {
+      const y = startY + index * 2;
       const isSelected = index === this.selectedLevel;
+      const isUnlocked = fontLevel.unlocked;
 
-      if (isSelected) {
-        renderer.drawRect(300, y - 10, 680, 80, '#333');
-        renderer.drawRectOutline(300, y - 10, 680, 80, '#0ff', 3);
+      let color = '#888';
+      if (isUnlocked) {
+        color = isSelected ? '#0ff' : '#fff';
+      } else {
+        color = '#444';
       }
 
       const prefix = isSelected ? '> ' : '  ';
-      renderer.drawText(prefix + level.name, 320, y, 28, isSelected ? '#0ff' : '#fff');
-      renderer.drawText(`Difficulty: ${level.difficulty}`, 320, y + 35, 20, '#aaa');
-      renderer.drawText(`Duration: ${level.duration}`, 600, y + 35, 20, '#aaa');
+      const lockIcon = isUnlocked ? '' : '🔒 ';
+      const bossIcon = fontLevel.isBoss ? '👑 ' : '';
+
+      renderer.drawText(
+        `${prefix}${lockIcon}${bossIcon}${fontLevel.name}`,
+        20,
+        y,
+        color,
+        28
+      );
+
+      if (isUnlocked) {
+        renderer.drawText(
+          `Difficulty: ${fontLevel.difficulty} | HP: ×${fontLevel.enemyHealthMultiplier} | DMG: ×${fontLevel.enemyDamageMultiplier}`,
+          25,
+          y + 0.8,
+          '#aaa',
+          16
+        );
+      } else {
+        renderer.drawText(
+          'Complete previous level to unlock',
+          25,
+          y + 0.8,
+          '#444',
+          16
+        );
+      }
     });
 
     // Instructions
-    renderer.drawText('Arrow Keys: Select | Enter: Start | Escape: Back', renderer.canvas.width / 2, renderer.canvas.height - 50, 16, '#888', 'center');
+    renderer.drawText(
+      'Arrow Keys / WASD: Select | Enter: Start | Escape: Back',
+      20,
+      20.5,
+      '#666',
+      16
+    );
   }
 }

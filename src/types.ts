@@ -14,48 +14,106 @@ export interface Entity {
   radius: number;
 }
 
+// Math-themed types
+export interface MathConstant {
+  id: string;
+  symbol: string;
+  name: string;
+  value: number;
+  rarity: 'common' | 'uncommon' | 'rare' | 'legendary';
+  color: string;
+}
+
+export interface MathOperator {
+  id: string;
+  symbol: string;
+  name: string;
+  color: string;
+}
+
+export type EquationComponent = MathConstant | MathOperator;
+
+export interface Equation {
+  components: EquationComponent[];
+  evaluatedValue: number;
+}
+
+export type WeaponType = 'one' | 'odds' | 'evens' | 'primes' | 'fibonacci' | 'factorials' | 'squares' | 'cubes' | 'biquadrates';
+
+export interface WeaponInstance {
+  id: string;
+  type: WeaponType;
+  equation: Equation;
+  level: number;
+  baseDamage: number;
+  cooldown: number;
+  cooldownTimer: number;
+}
+
+export interface PlayerInventory {
+  constants: MathConstant[];
+  operators: MathOperator[];
+  equalSigns: number;
+}
+
 export interface Player extends Entity {
   health: number;
   maxHealth: number;
   level: number;
   experience: number;
   experienceToNextLevel: number;
-  stats: PlayerStats;
-  shootCooldown: number;
-  shootTimer: number;
-  projectileSpeed: number;
-  projectileDamage: number;
-}
-
-export interface PlayerStats {
-  strength: number;
-  defense: number;
+  currentWeapons: WeaponInstance[];
+  inventory: PlayerInventory;
   speed: number;
 }
 
-export interface Enemy extends Entity {
+export type EnemyStyle = 'normal' | 'bold' | 'underlined' | 'italic';
+
+export interface LetterEnemy extends Entity {
   health: number;
   maxHealth: number;
   damage: number;
   experienceReward: number;
-  shootCooldown: number;
-  shootTimer: number;
-  projectileSpeed: number;
-  aiType: 'chaser' | 'shooter' | 'circler';
+  letter: string;
+  evolutionStage: number;
+  style: EnemyStyle;
+  isElite: boolean;
+  attackTimer?: number;
+  behaviorTimer?: number;
 }
 
-export interface Item {
+export interface WorldItem extends Entity {
+  itemType: 'constant' | 'operator' | 'equalSign' | 'lootBox';
+  data: MathConstant | MathOperator | null;
+  opened?: boolean; // For loot boxes
+}
+
+export interface Obstacle {
+  id: string;
+  position: Position;
+  width: number;
+  height: number;
+  color: string;
+  shape: 'rectangle' | 'circle';
+  radius?: number; // For circles
+}
+
+export interface FontLevel {
   id: string;
   name: string;
-  description: string;
-  rarity: 'common' | 'uncommon' | 'rare' | 'legendary';
-  apply: (player: Player) => void;
+  fontFamily: string;
+  difficulty: number;
+  unlocked: boolean;
+  enemyHealthMultiplier: number;
+  enemyDamageMultiplier: number;
+  isBoss: boolean;
 }
 
 export interface LevelUpOption {
-  name: string;
-  description: string;
-  apply: (player: Player) => void;
+  number: number;
+  properties: WeaponType[];
+  displayText: string;
+  damageMultiplier: number;
 }
 
 export interface Projectile {
@@ -68,17 +126,20 @@ export interface Projectile {
   color: string;
   lifetime: number;
   radius: number;
+  piercing?: boolean;
+  bounces?: number;
+  explosionRadius?: number;
 }
 
-export type GameScreen = 'menu' | 'characterSelect' | 'levelSelect' | 'game' | 'levelUp' | 'gameOver';
+export type GameScreen = 'menu' | 'levelSelect' | 'game' | 'levelUp' | 'gameOver' | 'equationBuilder';
 
 export interface GameState {
   screen: GameScreen;
   player: Player | null;
-  enemies: Enemy[];
+  enemies: LetterEnemy[];
   projectiles: Projectile[];
-  items: Item[];
-  currentLevel: number;
+  worldItems: WorldItem[];
+  currentFontLevel: number;
   score: number;
   levelUpOptions: LevelUpOption[];
 }
