@@ -15,14 +15,16 @@ export class EquationOverlay {
   private constantsScroll: number = 0; // Scroll offset for constants
   private operatorsScroll: number = 0; // Scroll offset for operators
   private readonly itemsPerPage = 10; // Max items visible at once
+  private readonly maxConstants = 20; // Max capacity
+  private readonly maxOperators = 20; // Max capacity
 
   constructor() {}
 
   toggleEditor(): void {
     this.isEditorOpen = !this.isEditorOpen;
     if (this.isEditorOpen && this.selectedSlot === -1) {
-      // Open first available slot by default
-      this.selectedSlot = 0;
+      // Open first editable slot by default (slot 1, since slot 0 is locked)
+      this.selectedSlot = 1;
     }
   }
 
@@ -34,37 +36,22 @@ export class EquationOverlay {
     if (!this.isEditorOpen) return;
 
     // Handle slot selection with number keys
-    if (input.isKeyJustPressed('Digit1')) this.selectedSlot = 0;
-    if (input.isKeyJustPressed('Digit2')) this.selectedSlot = 1;
-    if (input.isKeyJustPressed('Digit3')) this.selectedSlot = 2;
-    if (input.isKeyJustPressed('Digit4')) this.selectedSlot = 3;
-    if (input.isKeyJustPressed('Digit5')) this.selectedSlot = 4;
-    if (input.isKeyJustPressed('Digit6')) this.selectedSlot = 5;
+    // Slot 0 is locked (starting weapon), keys 1-6 select slots 1-6
+    const totalSlots = 1 + player.inventory.equalSigns;
+    if (input.isKeyJustPressed('Digit1') && totalSlots >= 2) this.selectedSlot = 1;
+    if (input.isKeyJustPressed('Digit2') && totalSlots >= 3) this.selectedSlot = 2;
+    if (input.isKeyJustPressed('Digit3') && totalSlots >= 4) this.selectedSlot = 3;
+    if (input.isKeyJustPressed('Digit4') && totalSlots >= 5) this.selectedSlot = 4;
+    if (input.isKeyJustPressed('Digit5') && totalSlots >= 6) this.selectedSlot = 5;
+    if (input.isKeyJustPressed('Digit6') && totalSlots >= 7) this.selectedSlot = 6;
 
-    // Clamp to available slots
-    const maxSlots = player.inventory.equalSigns;
-    if (this.selectedSlot >= maxSlots) {
-      this.selectedSlot = Math.max(0, maxSlots - 1);
+    // Clamp to available slots (slot 1 to totalSlots-1, never slot 0)
+    const maxSlot = totalSlots - 1;
+    if (this.selectedSlot > maxSlot) {
+      this.selectedSlot = Math.max(1, maxSlot);
     }
-
-    // Scroll inventory with arrow keys (Left/Right for constants, Up/Down for operators)
-    if (input.isKeyJustPressed('ArrowLeft')) {
-      this.constantsScroll = Math.max(0, this.constantsScroll - 1);
-    }
-    if (input.isKeyJustPressed('ArrowRight')) {
-      this.constantsScroll = Math.min(
-        Math.max(0, player.inventory.constants.length - this.itemsPerPage),
-        this.constantsScroll + 1
-      );
-    }
-    if (input.isKeyJustPressed('ArrowUp')) {
-      this.operatorsScroll = Math.max(0, this.operatorsScroll - 1);
-    }
-    if (input.isKeyJustPressed('ArrowDown')) {
-      this.operatorsScroll = Math.min(
-        Math.max(0, player.inventory.operators.length - this.itemsPerPage),
-        this.operatorsScroll + 1
-      );
+    if (this.selectedSlot < 1) {
+      this.selectedSlot = 1;
     }
 
     // Handle mouse for drag & drop
@@ -113,30 +100,38 @@ export class EquationOverlay {
     const inventoryY = 100;
     const constantsStartX = 50;
     const operatorsStartX = 400;
-    const itemSize = 40;
-    const spacing = 10;
+    const itemSize = 35;
+    const spacing = 5;
+    const gridCols = 5;
+    const gridRows = 4;
 
-    // Check visible constants (accounting for scroll)
-    const visibleConstants = player.inventory.constants.slice(
-      this.constantsScroll,
-      this.constantsScroll + this.itemsPerPage
-    );
-    for (let i = 0; i < visibleConstants.length; i++) {
-      const itemX = constantsStartX + i * (itemSize + spacing);
-      if (x >= itemX && x <= itemX + itemSize && y >= inventoryY && y <= inventoryY + itemSize) {
-        return visibleConstants[i]; // Return the constant directly
+    // Check constants grid
+    for (let row = 0; row < gridRows; row++) {
+      for (let col = 0; col < gridCols; col++) {
+        const index = row * gridCols + col;
+        const itemX = constantsStartX + col * (itemSize + spacing);
+        const itemY = inventoryY + row * (itemSize + spacing);
+
+        if (x >= itemX && x <= itemX + itemSize && y >= itemY && y <= itemY + itemSize) {
+          if (index < player.inventory.constants.length) {
+            return player.inventory.constants[index];
+          }
+        }
       }
     }
 
-    // Check visible operators (accounting for scroll)
-    const visibleOperators = player.inventory.operators.slice(
-      this.operatorsScroll,
-      this.operatorsScroll + this.itemsPerPage
-    );
-    for (let i = 0; i < visibleOperators.length; i++) {
-      const itemX = operatorsStartX + i * (itemSize + spacing);
-      if (x >= itemX && x <= itemX + itemSize && y >= inventoryY && y <= inventoryY + itemSize) {
-        return visibleOperators[i]; // Return the operator directly
+    // Check operators grid
+    for (let row = 0; row < gridRows; row++) {
+      for (let col = 0; col < gridCols; col++) {
+        const index = row * gridCols + col;
+        const itemX = operatorsStartX + col * (itemSize + spacing);
+        const itemY = inventoryY + row * (itemSize + spacing);
+
+        if (x >= itemX && x <= itemX + itemSize && y >= itemY && y <= itemY + itemSize) {
+          if (index < player.inventory.operators.length) {
+            return player.inventory.operators[index];
+          }
+        }
       }
     }
 
@@ -192,6 +187,11 @@ export class EquationOverlay {
   }
 
   private addItemToSlot(slotIndex: number, item: EquationComponent, player: Player): void {
+    // Slot 0 is reserved for starting weapon - cannot be modified
+    if (slotIndex === 0) {
+      return;
+    }
+
     // Ensure weapon exists
     while (player.currentWeapons.length <= slotIndex) {
       const newWeapon: WeaponInstance = {
@@ -234,6 +234,10 @@ export class EquationOverlay {
   }
 
   private removeItemFromSlot(slotIndex: number, itemIndex: number, player: Player): void {
+    // Slot 0 is reserved for starting weapon - cannot be modified
+    if (slotIndex === 0) {
+      return;
+    }
     if (slotIndex >= player.currentWeapons.length) return;
 
     const weapon = player.currentWeapons[slotIndex];
@@ -271,23 +275,27 @@ export class EquationOverlay {
     ctx.save();
     ctx.font = '12px monospace';
 
+    // Total slots: slot 0 (locked starting weapon) + equalSigns additional slots
+    const totalSlots = 1 + player.inventory.equalSigns;
+
     // Draw flash effect if timer is active
     if (flashTimer > 0) {
       const alpha = Math.min(0.5, flashTimer / 1000 * 0.5);
       const pulse = Math.sin(flashTimer * 0.01) * 0.3 + 0.7;
       ctx.fillStyle = `rgba(255, 255, 0, ${alpha * pulse})`;
-      ctx.fillRect(startX - 10, startY - 10, slotWidth + 20, (player.inventory.equalSigns * (slotHeight + slotSpacing)) + 10);
+      ctx.fillRect(startX - 10, startY - 10, slotWidth + 20, (totalSlots * (slotHeight + slotSpacing)) + 10);
 
       ctx.strokeStyle = `rgba(255, 255, 0, ${alpha})`;
       ctx.lineWidth = 3;
-      ctx.strokeRect(startX - 10, startY - 10, slotWidth + 20, (player.inventory.equalSigns * (slotHeight + slotSpacing)) + 10);
+      ctx.strokeRect(startX - 10, startY - 10, slotWidth + 20, (totalSlots * (slotHeight + slotSpacing)) + 10);
     }
 
-    for (let i = 0; i < player.inventory.equalSigns; i++) {
+    for (let i = 0; i < totalSlots; i++) {
       const y = startY + i * (slotHeight + slotSpacing);
+      const isLocked = (i === 0); // Slot 0 is locked
 
       // Draw slot background
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+      ctx.fillStyle = isLocked ? 'rgba(40, 40, 40, 0.7)' : 'rgba(0, 0, 0, 0.7)';
       ctx.fillRect(startX, y, slotWidth, slotHeight);
 
       if (i < player.currentWeapons.length) {
@@ -299,13 +307,22 @@ export class EquationOverlay {
         ctx.lineWidth = 2;
         ctx.strokeRect(startX, y, slotWidth, slotHeight);
 
+        // Draw lock icon for slot 0
+        if (isLocked) {
+          ctx.fillStyle = '#888';
+          ctx.font = '14px monospace';
+          ctx.textAlign = 'left';
+          ctx.textBaseline = 'middle';
+          ctx.fillText('🔒', startX + 5, y + slotHeight / 2);
+        }
+
         // Draw equation result
         ctx.fillStyle = color;
         ctx.textAlign = 'left';
         ctx.textBaseline = 'middle';
 
         const resultText = `= ${Math.floor(weapon.equation.evaluatedValue)}`;
-        ctx.fillText(resultText, startX + 5, y + slotHeight / 2);
+        ctx.fillText(resultText, startX + (isLocked ? 25 : 5), y + slotHeight / 2);
 
         // Draw weapon type
         ctx.fillStyle = '#aaa';
@@ -345,7 +362,7 @@ export class EquationOverlay {
 
     ctx.font = '14px monospace';
     ctx.fillStyle = '#aaa';
-    ctx.fillText('Drag items to weapon slots • Click items in slots to remove • 1-6: Select slot', canvasWidth / 2, 70);
+    ctx.fillText('Drag items to weapon slots • Click items in slots to remove • 1-6: Select slot • Slot 0 is locked', canvasWidth / 2, 70);
 
     // Inventory section
     this.renderInventory(ctx, player);
@@ -365,69 +382,78 @@ export class EquationOverlay {
     const inventoryY = 100;
     const constantsStartX = 50;
     const operatorsStartX = 400;
-    const itemSize = 40;
-    const spacing = 10;
+    const itemSize = 35;
+    const spacing = 5;
+    const gridCols = 5;
+    const gridRows = 4;
 
-    // Constants label and scroll info
+    // Constants label with capacity
     ctx.font = '14px monospace';
-    ctx.fillStyle = '#8f8';
+    const atCapacity = player.inventory.constants.length >= this.maxConstants;
+    ctx.fillStyle = atCapacity ? '#f44' : '#8f8';
     ctx.textAlign = 'left';
-    const constantsText = `Numbers: ${this.constantsScroll + 1}-${Math.min(this.constantsScroll + this.itemsPerPage, player.inventory.constants.length)} of ${player.inventory.constants.length}`;
-    ctx.fillText(constantsText, constantsStartX, inventoryY - 10);
+    ctx.fillText(`Numbers: ${player.inventory.constants.length}/${this.maxConstants}`, constantsStartX, inventoryY - 10);
 
-    // Scroll arrows for constants
-    if (this.constantsScroll > 0) {
-      ctx.fillStyle = '#ff0';
-      ctx.fillText('◀', constantsStartX - 20, inventoryY + itemSize / 2);
-    }
-    if (this.constantsScroll + this.itemsPerPage < player.inventory.constants.length) {
-      ctx.fillStyle = '#ff0';
-      ctx.fillText('▶', constantsStartX + this.itemsPerPage * (itemSize + spacing), inventoryY + itemSize / 2);
-    }
+    // Draw constants in 5x4 grid
+    for (let row = 0; row < gridRows; row++) {
+      for (let col = 0; col < gridCols; col++) {
+        const index = row * gridCols + col;
+        const x = constantsStartX + col * (itemSize + spacing);
+        const y = inventoryY + row * (itemSize + spacing);
 
-    // Draw visible constants
-    const visibleConstants = player.inventory.constants.slice(
-      this.constantsScroll,
-      this.constantsScroll + this.itemsPerPage
-    );
-    visibleConstants.forEach((constant, i) => {
-      const x = constantsStartX + i * (itemSize + spacing);
-      this.renderInventoryItem(ctx, constant.symbol, constant.color, x, inventoryY, itemSize);
-    });
-
-    // Operators label and scroll info
-    ctx.fillStyle = '#88f';
-    const operatorsText = `Operators: ${this.operatorsScroll + 1}-${Math.min(this.operatorsScroll + this.itemsPerPage, player.inventory.operators.length)} of ${player.inventory.operators.length}`;
-    ctx.fillText(operatorsText, operatorsStartX, inventoryY - 10);
-
-    // Scroll arrows for operators
-    if (this.operatorsScroll > 0) {
-      ctx.fillStyle = '#ff0';
-      ctx.fillText('◀', operatorsStartX - 20, inventoryY + itemSize / 2);
-    }
-    if (this.operatorsScroll + this.itemsPerPage < player.inventory.operators.length) {
-      ctx.fillStyle = '#ff0';
-      ctx.fillText('▶', operatorsStartX + this.itemsPerPage * (itemSize + spacing), inventoryY + itemSize / 2);
+        if (index < player.inventory.constants.length) {
+          const constant = player.inventory.constants[index];
+          this.renderInventoryItem(ctx, constant.symbol, constant.color, x, y, itemSize);
+        } else {
+          // Empty slot
+          this.renderEmptySlot(ctx, x, y, itemSize, '#8f8');
+        }
+      }
     }
 
-    // Draw visible operators
-    const visibleOperators = player.inventory.operators.slice(
-      this.operatorsScroll,
-      this.operatorsScroll + this.itemsPerPage
-    );
-    visibleOperators.forEach((operator, i) => {
-      const x = operatorsStartX + i * (itemSize + spacing);
-      this.renderInventoryItem(ctx, operator.symbol, operator.color, x, inventoryY, itemSize);
-    });
+    // Operators label with capacity
+    const atOpCapacity = player.inventory.operators.length >= this.maxOperators;
+    ctx.fillStyle = atOpCapacity ? '#f44' : '#88f';
+    ctx.fillText(`Operators: ${player.inventory.operators.length}/${this.maxOperators}`, operatorsStartX, inventoryY - 10);
+
+    // Draw operators in 5x4 grid
+    for (let row = 0; row < gridRows; row++) {
+      for (let col = 0; col < gridCols; col++) {
+        const index = row * gridCols + col;
+        const x = operatorsStartX + col * (itemSize + spacing);
+        const y = inventoryY + row * (itemSize + spacing);
+
+        if (index < player.inventory.operators.length) {
+          const operator = player.inventory.operators[index];
+          this.renderInventoryItem(ctx, operator.symbol, operator.color, x, y, itemSize);
+        } else {
+          // Empty slot
+          this.renderEmptySlot(ctx, x, y, itemSize, '#88f');
+        }
+      }
+    }
 
     // Equal signs
     ctx.fillStyle = '#ff0';
-    ctx.fillText(`Equal Signs: ${player.inventory.equalSigns}`, 50, inventoryY + 70);
+    ctx.fillText(`Equal Signs: ${player.inventory.equalSigns}`, 50, inventoryY + (gridRows * (itemSize + spacing)) + 20);
 
     // Instructions
     ctx.fillStyle = '#666';
     ctx.font = '12px monospace';
-    ctx.fillText('← → : Scroll numbers  |  ↑ ↓ : Scroll operators', 50, inventoryY + 95);
+    ctx.fillText('Click items to drag • Click slots to remove • Numbers hotkeys 1-6', 50, inventoryY + (gridRows * (itemSize + spacing)) + 45);
+  }
+
+  private renderEmptySlot(ctx: CanvasRenderingContext2D, x: number, y: number, size: number, color: string): void {
+    // Background
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+    ctx.fillRect(x, y, size, size);
+
+    // Border
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1;
+    ctx.globalAlpha = 0.3;
+    ctx.strokeRect(x, y, size, size);
+    ctx.globalAlpha = 1.0;
   }
 
   private renderInventoryItem(ctx: CanvasRenderingContext2D, symbol: string, color: string, x: number, y: number, size: number): void {
@@ -449,7 +475,7 @@ export class EquationOverlay {
   }
 
   private renderWeaponSlots(ctx: CanvasRenderingContext2D, player: Player): void {
-    const slotsY = 200;
+    const slotsY = 320;  // Moved down from 200 to avoid inventory overlap
     const slotWidth = 600;
     const slotHeight = 60;
     const slotSpacing = 10;
@@ -460,11 +486,19 @@ export class EquationOverlay {
     ctx.textAlign = 'left';
     ctx.fillText('Weapon Slots:', slotX, slotsY - 15);
 
-    for (let i = 0; i < player.inventory.equalSigns; i++) {
-      const y = slotsY + i * (slotHeight + slotSpacing);
+    // Total slots: slot 0 (locked starting weapon) + equalSigns additional slots
+    const totalSlots = 1 + player.inventory.equalSigns;
 
-      // Slot background
-      ctx.fillStyle = i === this.selectedSlot ? 'rgba(100, 100, 100, 0.5)' : 'rgba(50, 50, 50, 0.5)';
+    for (let i = 0; i < totalSlots; i++) {
+      const y = slotsY + i * (slotHeight + slotSpacing);
+      const isLocked = (i === 0); // Slot 0 is locked
+
+      // Slot background (dimmed if locked)
+      if (isLocked) {
+        ctx.fillStyle = 'rgba(60, 60, 40, 0.5)';
+      } else {
+        ctx.fillStyle = i === this.selectedSlot ? 'rgba(100, 100, 100, 0.5)' : 'rgba(50, 50, 50, 0.5)';
+      }
       ctx.fillRect(slotX, y, slotWidth, slotHeight);
 
       if (i < player.currentWeapons.length) {
@@ -472,9 +506,24 @@ export class EquationOverlay {
         const color = WEAPON_COLORS[weapon.type] || '#fff';
 
         // Colored border
-        ctx.strokeStyle = color;
+        ctx.strokeStyle = isLocked ? '#886' : color;
         ctx.lineWidth = 3;
         ctx.strokeRect(slotX, y, slotWidth, slotHeight);
+
+        // Draw lock icon for slot 0
+        if (isLocked) {
+          ctx.font = '20px monospace';
+          ctx.fillStyle = '#888';
+          ctx.textAlign = 'left';
+          ctx.textBaseline = 'middle';
+          ctx.fillText('🔒', slotX + 10, y + slotHeight / 2);
+
+          // Add "LOCKED" text
+          ctx.font = '12px monospace';
+          ctx.fillStyle = '#888';
+          ctx.textAlign = 'left';
+          ctx.fillText('LOCKED', slotX + 35, y + slotHeight / 2);
+        }
 
         // Draw equation components
         const itemStartX = slotX + 10;
@@ -522,12 +571,16 @@ export class EquationOverlay {
         ctx.fillText('Drag items here to build weapon', slotX + slotWidth / 2, y + slotHeight / 2);
       }
 
-      // Slot number
+      // Slot number (or lock indicator)
       ctx.font = 'bold 14px monospace';
-      ctx.fillStyle = '#888';
+      ctx.fillStyle = isLocked ? '#886' : '#888';
       ctx.textAlign = 'left';
       ctx.textBaseline = 'top';
-      ctx.fillText(`${i + 1}`, slotX + 5, y + 5);
+      if (isLocked) {
+        ctx.fillText('🔒 0', slotX + 5, y + 5);
+      } else {
+        ctx.fillText(`${i + 1}`, slotX + 5, y + 5);
+      }
     }
   }
 

@@ -110,6 +110,20 @@ export function getNumberProperties(n: number): WeaponType[] {
   return properties;
 }
 
+// Rarity hierarchy (lower = rarer = higher priority)
+// Based on frequency of occurrence below 10,000
+export const PROPERTY_RARITY: Record<WeaponType, number> = {
+  'one': 1,           // Only 1
+  'biquadrates': 2,   // ~31 below 10,000 (n^4: 1, 16, 81, 256, ...)
+  'factorials': 3,    // Only 7 below 10,000 (1!, 2!, 3!, 4!, 5!, 6!, 7!)
+  'fibonacci': 4,     // ~20 below 10,000 (1, 1, 2, 3, 5, 8, 13, ...)
+  'cubes': 5,         // ~21 below 10,000 (n^3: 1, 8, 27, 64, ...)
+  'primes': 6,        // ~1,229 below 10,000 (~12%)
+  'squares': 7,       // ~100 below 10,000 (n^2: 1, 4, 9, 16, ...)
+  'evens': 8,         // 5,000 below 10,000 (50%)
+  'odds': 9           // 5,000 below 10,000 (50%)
+};
+
 // Calculate rarity multiplier based on number of properties
 export function calculateRarityMultiplier(properties: WeaponType[]): number {
   const count = properties.length;

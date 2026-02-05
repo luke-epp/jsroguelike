@@ -1,7 +1,7 @@
 // Equation evaluation and weapon creation system
 
 import { Equation, EquationComponent, MathConstant, MathOperator, WeaponType, WeaponInstance } from './types.js';
-import { getNumberProperties } from './mathUtils.js';
+import { getNumberProperties, PROPERTY_RARITY } from './mathUtils.js';
 
 // Evaluate an equation with proper operator precedence
 export function evaluateEquation(components: EquationComponent[]): number {
@@ -78,24 +78,17 @@ export function evaluateEquation(components: EquationComponent[]): number {
 }
 
 // Determine weapon type from evaluated value
+// Uses rarity-based hierarchy where rarest properties take priority
 export function determineWeaponType(value: number): WeaponType | null {
   const properties = getNumberProperties(value);
 
   if (properties.length === 0) return null;
 
-  // Return highest priority property
-  const priorityOrder: WeaponType[] = [
-    'one', 'primes', 'fibonacci', 'factorials', 'biquadrates',
-    'cubes', 'squares', 'evens', 'odds'
-  ];
+  // Sort by rarity (lowest rarity number = highest priority = rarest)
+  properties.sort((a, b) => PROPERTY_RARITY[a] - PROPERTY_RARITY[b]);
 
-  for (const type of priorityOrder) {
-    if (properties.includes(type)) {
-      return type;
-    }
-  }
-
-  return null;
+  // Return rarest property
+  return properties[0];
 }
 
 // Create a weapon instance from an equation

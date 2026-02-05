@@ -26,19 +26,24 @@ export class GameplayScreen {
   private pickupNotifications: PickupNotificationManager;
   private equationOverlay: EquationOverlay;
 
-  // Evolution system
+  // Evolution system - Full alphabet progression
   private evolutionTimer = 0;
-  private evolutionInterval = 30000; // 30 seconds
-  private currentLetterStage = 0; // 0='a', 1='b', 2='c'...
-  private maxEvolutions = 5; // Complete after 5 evolution cycles
+  private evolutionInterval = 20000; // 20 seconds
+  private currentLetterStage = 0; // 0='a', 1='b', 2='c'... up to 25='z'
+  private maxEvolutions = 26; // Full alphabet a-z
+  private bossStages = [6, 13, 20, 26]; // Boss fights at stages 7(&), 14(@), 21(?), 27(!)
 
   private enemySpawnTimer = 0;
-  private enemySpawnInterval = 2000; // Spawn every 2 seconds (was 3)
+  private enemySpawnInterval = 1000; // Spawn every 1 second (was 2)
   private hasDroppedFirstEqualSign = false;
   private fontLevelIndex: number;
   private needsLevelUpScreen = false;
   private equalSignFlashTimer = 0; // Flash effect when picking up equal sign
   private totalPlaytime = 0; // Track total playtime for progressive drops
+  private isPaused = false; // Pause menu overlay
+  private pauseMenuSelection = 0; // 0=Resume, 1=Exit to Menu
+  private startTime: number = Date.now(); // Track start time for elapsed timer
+  private elapsedTime: number = 0; // Total elapsed time in milliseconds
 
   constructor(player: Player, fontLevelIndex: number) {
     this.player = this.initializePlayerPhysics(player);
@@ -89,7 +94,7 @@ export class GameplayScreen {
   }
 
   private spawnLetterEnemy(): void {
-    const letter = String.fromCharCode(97 + this.currentLetterStage); // 'a' + stage
+    const letter = String.fromCharCode(97 + this.currentLetterStage); // 'a' + stage (0-25)
     const fontLevel = FONT_LEVELS[this.fontLevelIndex];
 
     // 30% chance for elite
@@ -97,8 +102,12 @@ export class GameplayScreen {
     const styles: EnemyStyle[] = ['bold', 'underlined', 'italic'];
     const style: EnemyStyle = isElite ? styles[Math.floor(Math.random() * styles.length)] : 'normal';
 
-    const baseHealth = 30 * fontLevel.enemyHealthMultiplier;
-    const baseDamage = 10 * fontLevel.enemyDamageMultiplier;
+    // Progressive scaling through alphabet (a is weakest, z is strongest)
+    // Much steeper scaling - +35% per letter (was +15%)
+    const progressionMultiplier = 1 + (this.currentLetterStage * 0.35);
+    // Weaker starting stats (20 health, 6 damage instead of 30/10)
+    const baseHealth = 20 * fontLevel.enemyHealthMultiplier * progressionMultiplier;
+    const baseDamage = 6 * fontLevel.enemyDamageMultiplier * progressionMultiplier;
 
     // Spawn around player using chunk system (infinite world, no bounds!)
     const spawnPos = this.chunkSystem.getEnemySpawnPosition(
@@ -128,6 +137,72 @@ export class GameplayScreen {
     };
 
     this.enemies.push(enemy);
+  }
+
+  private spawnBoss(): void {
+    const fontLevel = FONT_LEVELS[this.fontLevelIndex];
+
+    // Determine boss symbol based on stage
+    let bossSymbol = '!';
+    let bossName = 'FINAL BOSS';
+    let colorScheme = '#f00';
+
+    if (this.currentLetterStage === 6) {
+      bossSymbol = '&';
+      bossName = 'THE CONJUNCTION';
+      colorScheme = '#ff0';
+    } else if (this.currentLetterStage === 13) {
+      bossSymbol = '@';
+      bossName = 'THE AT SIGN';
+      colorScheme = '#0ff';
+    } else if (this.currentLetterStage === 20) {
+      bossSymbol = '?';
+      bossName = 'THE QUESTION';
+      colorScheme = '#f0f';
+    } else if (this.currentLetterStage === 26) {
+      bossSymbol = '!';
+      bossName = 'THE EXCLAMATION';
+      colorScheme = '#f00';
+    }
+
+    // Bosses are MUCH stronger
+    const progressionMultiplier = 1 + (this.currentLetterStage * 0.15);
+    const baseHealth = 200 * fontLevel.enemyHealthMultiplier * progressionMultiplier;
+    const baseDamage = 25 * fontLevel.enemyDamageMultiplier * progressionMultiplier;
+
+    // Spawn boss near player
+    const spawnPos = this.chunkSystem.getEnemySpawnPosition(
+      this.player.position.x,
+      this.player.position.y
+    );
+
+    const boss: LetterEnemy = {
+      id: `boss_${Date.now()}`,
+      position: spawnPos,
+      velocity: { x: 0, y: 0 },
+      sprite: bossSymbol,
+      color: colorScheme,
+      radius: 30, // Larger than normal enemies
+      health: baseHealth,
+      maxHealth: baseHealth,
+      damage: baseDamage,
+      experienceReward: 500,
+      letter: bossSymbol,
+      evolutionStage: this.currentLetterStage,
+      style: 'bold',
+      isElite: true, // Bosses count as elite
+      attackTimer: 0,
+      behaviorTimer: 0
+    };
+
+    this.enemies.push(boss);
+
+    // Show boss notification
+    this.pickupNotifications.spawn(
+      { x: this.player.position.x, y: this.player.position.y - 100 },
+      `${bossName} APPEARS!`,
+      colorScheme
+    );
   }
 
   private spawnWorldItem(type: 'constant' | 'operator' | 'equalSign' | 'lootBox', position: Position, data: MathConstant | MathOperator | null = null): void {
@@ -188,6 +263,8 @@ export class GameplayScreen {
     // Track total playtime for progressive drops (only when not paused)
     if (!this.equationOverlay.isOpen()) {
       this.totalPlaytime += deltaTime;
+      // Update elapsed time
+      this.elapsedTime = Date.now() - this.startTime;
     }
 
     // If equation editor is open, pause the game (only update flash timer)
@@ -199,27 +276,56 @@ export class GameplayScreen {
       return null; // Don't update game logic
     }
 
-    // Return to main menu with Escape (when editor is closed)
+    // Handle pause menu with Escape
     if (input.isKeyJustPressed('Escape')) {
-      return 'menu';
+      this.isPaused = !this.isPaused;
+      if (this.isPaused) {
+        this.pauseMenuSelection = 0; // Reset to Resume
+      }
     }
 
-    // Update evolution timer
+    // If paused, handle pause menu
+    if (this.isPaused) {
+      // Navigate pause menu
+      if (input.isKeyJustPressed('ArrowUp') || input.isKeyJustPressed('KeyW')) {
+        this.pauseMenuSelection = Math.max(0, this.pauseMenuSelection - 1);
+      }
+      if (input.isKeyJustPressed('ArrowDown') || input.isKeyJustPressed('KeyS')) {
+        this.pauseMenuSelection = Math.min(1, this.pauseMenuSelection + 1);
+      }
+      // Select option
+      if (input.isKeyJustPressed('Enter') || input.isKeyJustPressed('Space')) {
+        if (this.pauseMenuSelection === 0) {
+          // Resume
+          this.isPaused = false;
+        } else {
+          // Exit to menu
+          return 'menu';
+        }
+      }
+      return null; // Don't update game logic while paused
+    }
+
+    // Update evolution timer - advance to next letter stage
     this.evolutionTimer += deltaTime;
     if (this.evolutionTimer >= this.evolutionInterval) {
-      this.evolveEnemies();
       this.evolutionTimer = 0;
       this.currentLetterStage++;
 
-      // Check level completion
-      if (this.currentLetterStage >= this.maxEvolutions) {
+      // Spawn boss at specific stages
+      if (this.bossStages.includes(this.currentLetterStage)) {
+        this.spawnBoss();
+      }
+
+      // Check level completion (after final boss)
+      if (this.currentLetterStage > this.maxEvolutions) {
         return 'levelUp';
       }
     }
 
     // Spawn more enemies
     this.enemySpawnTimer += deltaTime;
-    if (this.enemySpawnTimer >= this.enemySpawnInterval && this.enemies.length < 30) {
+    if (this.enemySpawnTimer >= this.enemySpawnInterval && this.enemies.length < 40) { // More enemies (was 30)
       this.spawnLetterEnemy();
       this.enemySpawnTimer = 0;
     }
@@ -259,25 +365,12 @@ export class GameplayScreen {
     return null;
   }
 
-  private evolveEnemies(): void {
-    for (const enemy of this.enemies) {
-      enemy.evolutionStage++;
-      enemy.letter = String.fromCharCode(97 + enemy.evolutionStage);
-      enemy.sprite = enemy.letter;
-
-      // Increase stats
-      enemy.maxHealth *= 1.2;
-      enemy.health = enemy.maxHealth;
-      enemy.damage *= 1.15;
-
-      // Slightly larger
-      enemy.radius *= 1.05;
-    }
-  }
+  // Enemy evolution removed - now spawns constant waves of current letter
+  // Old enemies don't transform, new enemies spawn as current letter
 
   private updatePlayerMovement(input: InputManager, dt: number): void {
-    const maxSpeed = this.player.speed;
-    const acceleration = 800;
+    const maxSpeed = this.player.speed * 1.3; // 30% faster movement
+    const acceleration = 1200; // Faster acceleration (was 800)
     const friction = 0.85;
 
     let ax = 0, ay = 0;
@@ -406,7 +499,7 @@ export class GameplayScreen {
     switch (behaviorType) {
       case 0: // 'a', 'f', 'k', etc. - Basic chaser
         if (dist > 0) {
-          const speed = 80;
+          const speed = 110; // Faster (was 80)
           enemy.velocity.x = (dir.x / dist) * speed;
           enemy.velocity.y = (dir.y / dist) * speed;
         }
@@ -414,30 +507,30 @@ export class GameplayScreen {
 
       case 1: // 'b', 'g', 'l', etc. - Shoot projectiles
         if (dist > 0) {
-          const speed = 60; // Slower movement
+          const speed = 80; // Faster (was 60)
           enemy.velocity.x = (dir.x / dist) * speed;
           enemy.velocity.y = (dir.y / dist) * speed;
         }
 
-        // Shoot at player every 2 seconds
-        if (enemy.attackTimer! >= 2.0 && dist < 600) {
+        // Shoot at player every 1.5 seconds (was 2)
+        if (enemy.attackTimer! >= 1.5 && dist < 600) {
           this.spawnEnemyProjectile(enemy, dir, dist);
           enemy.attackTimer = 0;
         }
         break;
 
       case 2: // 'c', 'h', 'm', etc. - Charge attack
-        if (enemy.behaviorTimer! < 2.0) {
-          // Move slowly toward player
+        if (enemy.behaviorTimer! < 1.5) {
+          // Move slowly toward player (faster wind-up)
           if (dist > 0) {
-            const speed = 40;
+            const speed = 50; // Faster (was 40)
             enemy.velocity.x = (dir.x / dist) * speed;
             enemy.velocity.y = (dir.y / dist) * speed;
           }
-        } else if (enemy.behaviorTimer! < 2.5) {
-          // Charge!
+        } else if (enemy.behaviorTimer! < 2.0) {
+          // Charge! (shorter duration, faster attack)
           if (dist > 0) {
-            const speed = 250;
+            const speed = 300; // Faster charge (was 250)
             enemy.velocity.x = (dir.x / dist) * speed;
             enemy.velocity.y = (dir.y / dist) * speed;
           }
@@ -448,8 +541,8 @@ export class GameplayScreen {
 
       case 3: // 'd', 'i', 'n', etc. - Circle player
         if (dist > 0) {
-          const orbitRadius = 200;
-          const orbitSpeed = 2.0; // radians per second
+          const orbitRadius = 180; // Closer orbit (was 200)
+          const orbitSpeed = 2.5; // Faster orbit (was 2.0)
 
           // Move toward orbit radius
           const targetDist = orbitRadius;
@@ -459,8 +552,8 @@ export class GameplayScreen {
           const perpX = -dir.y;
           const perpY = dir.x;
 
-          const radialSpeed = Math.sign(distanceToTarget) * 50;
-          const tangentialSpeed = 100;
+          const radialSpeed = Math.sign(distanceToTarget) * 70; // Faster (was 50)
+          const tangentialSpeed = 130; // Faster (was 100)
 
           enemy.velocity.x = (dir.x / dist) * radialSpeed + perpX / dist * tangentialSpeed;
           enemy.velocity.y = (dir.y / dist) * radialSpeed + perpY / dist * tangentialSpeed;
@@ -468,17 +561,17 @@ export class GameplayScreen {
         break;
 
       case 4: // 'e', 'j', 'o', etc. - Erratic movement with dash
-        if (enemy.behaviorTimer! < 1.5) {
-          // Random wandering
-          if (enemy.behaviorTimer! % 0.5 < dt) {
+        if (enemy.behaviorTimer! < 1.0) {
+          // Random wandering (faster pattern)
+          if (enemy.behaviorTimer! % 0.4 < dt) {
             const angle = Math.random() * Math.PI * 2;
-            enemy.velocity.x = Math.cos(angle) * 60;
-            enemy.velocity.y = Math.sin(angle) * 60;
+            enemy.velocity.x = Math.cos(angle) * 80; // Faster (was 60)
+            enemy.velocity.y = Math.sin(angle) * 80;
           }
-        } else if (enemy.behaviorTimer! < 2.0) {
-          // Dash toward player
+        } else if (enemy.behaviorTimer! < 1.5) {
+          // Dash toward player (faster, shorter duration)
           if (dist > 0) {
-            const speed = 200;
+            const speed = 250; // Faster dash (was 200)
             enemy.velocity.x = (dir.x / dist) * speed;
             enemy.velocity.y = (dir.y / dist) * speed;
           }
@@ -490,7 +583,7 @@ export class GameplayScreen {
   }
 
   private spawnEnemyProjectile(enemy: LetterEnemy, direction: { x: number; y: number }, distance: number): void {
-    const speed = 200;
+    const speed = 250; // Faster projectiles (was 200)
     const dx = direction.x / distance;
     const dy = direction.y / distance;
 
@@ -532,6 +625,7 @@ export class GameplayScreen {
         const dist = this.distance(proj.position, this.player.position);
         if (dist < proj.radius + this.player.radius) {
           this.player.health -= proj.damage;
+          this.audioManager.playHit(0.4); // Hit sound when player is damaged
           this.projectiles.splice(i, 1);
           continue;
         }
@@ -589,7 +683,7 @@ export class GameplayScreen {
         if (this.player.experience >= this.player.experienceToNextLevel) {
           this.player.level++;
           this.player.experience -= this.player.experienceToNextLevel;
-          this.player.experienceToNextLevel = Math.floor(this.player.experienceToNextLevel * 1.5);
+          this.player.experienceToNextLevel = Math.floor(this.player.experienceToNextLevel * 1.8); // Steeper scaling (was 1.5)
 
           // Trigger level-up screen
           this.needsLevelUpScreen = true;
@@ -601,30 +695,31 @@ export class GameplayScreen {
           this.hasDroppedFirstEqualSign = true;
         }
 
-        // Elites drop better loot but not too much (progressive unlock)
+        // Elites drop better loot but VERY scarce (progressive unlock)
         if (enemy.isElite) {
-          // 1-2 operators from elites (progressive unlock)
-          const opCount = 1 + Math.floor(Math.random() * 2);
-          const availableOperators = this.getAvailableOperators();
-          for (let j = 0; j < opCount; j++) {
+          // 10% chance for 1 operator (reduced from 50%)
+          if (Math.random() < 0.10) {
+            const availableOperators = this.getAvailableOperators();
             if (availableOperators.length > 0) {
               const operator = availableOperators[Math.floor(Math.random() * availableOperators.length)];
               this.spawnWorldItem('operator', enemy.position, operator);
             }
           }
 
-          // 1 constant from elite (higher values preferred if available)
-          const availableConstants = this.getAvailableConstants();
-          if (availableConstants.length > 0) {
-            // Prefer higher values
-            const sortedConstants = [...availableConstants].sort((a, b) => b.value - a.value);
-            const topHalf = sortedConstants.slice(0, Math.ceil(sortedConstants.length / 2));
-            const constant = topHalf[Math.floor(Math.random() * topHalf.length)];
-            this.spawnWorldItem('constant', enemy.position, constant);
+          // 12% chance for 1 constant (reduced from 60%)
+          if (Math.random() < 0.12) {
+            const availableConstants = this.getAvailableConstants();
+            if (availableConstants.length > 0) {
+              // Prefer higher values
+              const sortedConstants = [...availableConstants].sort((a, b) => b.value - a.value);
+              const topHalf = sortedConstants.slice(0, Math.ceil(sortedConstants.length / 2));
+              const constant = topHalf[Math.floor(Math.random() * topHalf.length)];
+              this.spawnWorldItem('constant', enemy.position, constant);
+            }
           }
 
-          // 30% chance for equal sign from elite
-          if (Math.random() < 0.3) {
+          // 3% chance for equal sign from elite (reduced from 15%)
+          if (Math.random() < 0.03) {
             this.spawnWorldItem('equalSign', enemy.position, null);
           }
         }
@@ -688,9 +783,18 @@ export class GameplayScreen {
   private collectItem(item: WorldItem): void {
     let pickupText = '';
     let pickupColor = '#0ff';
+    const maxConstants = 20;
+    const maxOperators = 20;
 
     if (item.itemType === 'constant' && item.data) {
       const constant = item.data as MathConstant;
+      // Check capacity
+      if (this.player.inventory.constants.length >= maxConstants) {
+        pickupText = 'Inventory Full!';
+        pickupColor = '#f44';
+        this.pickupNotifications.spawn(item.position, pickupText, pickupColor);
+        return; // Don't collect
+      }
       this.player.inventory.constants.push(constant);
       pickupText = `+${constant.symbol} ${constant.name}`;
 
@@ -704,6 +808,13 @@ export class GameplayScreen {
       pickupColor = rarityColors[constant.rarity] || '#0ff';
     } else if (item.itemType === 'operator' && item.data) {
       const operator = item.data as MathOperator;
+      // Check capacity
+      if (this.player.inventory.operators.length >= maxOperators) {
+        pickupText = 'Inventory Full!';
+        pickupColor = '#f44';
+        this.pickupNotifications.spawn(item.position, pickupText, pickupColor);
+        return; // Don't collect
+      }
       this.player.inventory.operators.push(operator);
       pickupText = `+${operator.symbol} ${operator.name}`;
       pickupColor = '#88f';
@@ -723,8 +834,8 @@ export class GameplayScreen {
   }
 
   private openLootBox(lootBox: WorldItem): void {
-    // Spawn 2-3 items around the loot box (reduced from 3-5)
-    const itemCount = 2 + Math.floor(Math.random() * 2);
+    // Spawn 1 item around the loot box (very scarce)
+    const itemCount = 1;
 
     for (let i = 0; i < itemCount; i++) {
       const angle = (Math.PI * 2 * i) / itemCount;
@@ -732,10 +843,10 @@ export class GameplayScreen {
       const x = lootBox.position.x + Math.cos(angle) * distance;
       const y = lootBox.position.y + Math.sin(angle) * distance;
 
-      // Random item type - weighted
+      // Random item type - weighted (adjusted for scarcity)
       const roll = Math.random();
-      if (roll < 0.5) {
-        // 50% chance for constant (progressive unlock)
+      if (roll < 0.6) {
+        // 60% chance for constant (progressive unlock)
         const availableConstants = this.getAvailableConstants();
         if (availableConstants.length === 0) continue; // Skip if no constants available yet
         const constant = availableConstants[Math.floor(Math.random() * availableConstants.length)];
@@ -750,8 +861,8 @@ export class GameplayScreen {
           data: constant
         };
         this.worldItems.push(item);
-      } else if (roll < 0.9) {
-        // 40% chance for operator (progressive unlock)
+      } else if (roll < 0.95) {
+        // 35% chance for operator (progressive unlock)
         const availableOperators = this.getAvailableOperators();
         if (availableOperators.length === 0) continue; // Skip if no operators available yet
         const operator = availableOperators[Math.floor(Math.random() * availableOperators.length)];
@@ -768,7 +879,7 @@ export class GameplayScreen {
         };
         this.worldItems.push(item);
       } else {
-        // 10% chance for equal sign
+        // 5% chance for equal sign
         const item: WorldItem = {
           id: `item_${Date.now()}_${Math.random()}`,
           position: { x, y },
@@ -917,6 +1028,7 @@ export class GameplayScreen {
     // HUD (UI space, not world space)
     renderer.setCamera(null); // Disable camera for HUD
     this.renderHUD(renderer);
+    this.renderElapsedTimer(renderer);
 
     // Minimap (UI space)
     const allWorldItems = [...this.chunkSystem.getItems(), ...this.worldItems];
@@ -945,6 +1057,50 @@ export class GameplayScreen {
       renderer.canvas.width,
       renderer.canvas.height
     );
+
+    // Pause menu overlay (when Esc is pressed)
+    if (this.isPaused) {
+      this.renderPauseMenu(renderer);
+    }
+  }
+
+  private renderPauseMenu(renderer: Renderer): void {
+    const ctx = renderer.ctx;
+    const centerX = renderer.canvas.width / 2;
+    const centerY = renderer.canvas.height / 2;
+
+    // Semi-transparent dark overlay
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.85)';
+    ctx.fillRect(0, 0, renderer.canvas.width, renderer.canvas.height);
+
+    // Title
+    ctx.font = 'bold 48px monospace';
+    ctx.fillStyle = '#fff';
+    ctx.textAlign = 'center';
+    ctx.fillText('PAUSED', centerX, centerY - 80);
+
+    // Menu options
+    const options = ['Resume', 'Exit to Menu'];
+    ctx.font = '24px monospace';
+
+    options.forEach((option, i) => {
+      const y = centerY + i * 50;
+      const isSelected = i === this.pauseMenuSelection;
+
+      // Highlight selected option
+      if (isSelected) {
+        ctx.fillStyle = '#ff0';
+        ctx.fillText('▶ ' + option + ' ◀', centerX, y);
+      } else {
+        ctx.fillStyle = '#888';
+        ctx.fillText(option, centerX, y);
+      }
+    });
+
+    // Instructions
+    ctx.font = '14px monospace';
+    ctx.fillStyle = '#666';
+    ctx.fillText('↑ ↓ or W S: Navigate | Enter/Space: Select | Esc: Resume', centerX, centerY + 120);
   }
 
   private renderHUD(renderer: Renderer): void {
@@ -958,8 +1114,12 @@ export class GameplayScreen {
 
     // Evolution timer
     const timeToEvolution = (this.evolutionInterval - this.evolutionTimer) / 1000;
-    renderer.drawText(`Next Evolution: ${Math.ceil(timeToEvolution)}s`, renderer.canvas.width / 2 - 100, 0.3, '#ff0', 20);
-    renderer.drawText(`Stage: ${this.currentLetterStage + 1}/${this.maxEvolutions}`, renderer.canvas.width / 2 - 60, 0.9, '#aaa', 16);
+    const currentLetter = String.fromCharCode(97 + this.currentLetterStage); // Current letter
+    const nextStageIsBoss = this.bossStages.includes(this.currentLetterStage + 1);
+    const stageText = nextStageIsBoss ? 'BOSS INCOMING' : `Next: ${currentLetter}→${String.fromCharCode(98 + this.currentLetterStage)}`;
+
+    renderer.drawText(`${stageText} in ${Math.ceil(timeToEvolution)}s`, renderer.canvas.width / 2 - 120, 0.3, nextStageIsBoss ? '#f00' : '#ff0', 20);
+    renderer.drawText(`Letter: ${currentLetter.toUpperCase()} (${this.currentLetterStage + 1}/${this.maxEvolutions})`, renderer.canvas.width / 2 - 80, 0.9, '#aaa', 16);
 
     // Inventory
     renderer.drawText(`Constants: ${this.player.inventory.constants.length}`, renderer.canvas.width - 150, 0.3, '#8f8', 14);
@@ -987,6 +1147,20 @@ export class GameplayScreen {
       16,
       '#666'
     );
+  }
+
+  private renderElapsedTimer(renderer: Renderer): void {
+    const ctx = renderer.ctx;
+    const minutes = Math.floor(this.elapsedTime / 60000);
+    const seconds = Math.floor((this.elapsedTime % 60000) / 1000);
+    const timeText = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+
+    ctx.save();
+    ctx.fillStyle = '#fff';
+    ctx.font = '24px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(timeText, renderer.canvas.width / 2, 30);
+    ctx.restore();
   }
 
   // Progressive drop system - unlock better items over time

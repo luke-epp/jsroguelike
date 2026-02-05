@@ -3,15 +3,13 @@
 import { Position, LetterEnemy, WorldItem, MathConstant } from './types.js';
 
 export class Minimap {
-  private width = 150;
-  private height = 150;
-  private worldWidth: number;
-  private worldHeight: number;
+  private width = 250;
+  private height = 250;
   private padding = 10;
+  private viewRadius = 2000; // Show 2000 pixels around player in each direction
 
   constructor(worldWidth: number, worldHeight: number) {
-    this.worldWidth = worldWidth;
-    this.worldHeight = worldHeight;
+    // Constructor kept for compatibility, but we use viewRadius instead
   }
 
   render(
@@ -41,14 +39,32 @@ export class Minimap {
     ctx.lineWidth = 2;
     ctx.strokeRect(x, y, this.width, this.height);
 
-    // Scale factor
-    const scaleX = this.width / this.worldWidth;
-    const scaleY = this.height / this.worldHeight;
+    // Calculate minimap view (centered on player, showing viewRadius in each direction)
+    const viewWidth = this.viewRadius * 2;
+    const viewHeight = this.viewRadius * 2;
+    const scaleX = this.width / viewWidth;
+    const scaleY = this.height / viewHeight;
+
+    // Helper function to convert world position to minimap position
+    const worldToMinimap = (worldPos: Position) => {
+      const relativeX = worldPos.x - playerPos.x + this.viewRadius; // Center on player
+      const relativeY = worldPos.y - playerPos.y + this.viewRadius;
+      return {
+        x: x + relativeX * scaleX,
+        y: y + relativeY * scaleY
+      };
+    };
 
     // Draw items - larger and brighter
     for (const item of items) {
-      const dotX = x + item.position.x * scaleX;
-      const dotY = y + item.position.y * scaleY;
+      const minimapPos = worldToMinimap(item.position);
+      const dotX = minimapPos.x;
+      const dotY = minimapPos.y;
+
+      // Skip if outside minimap bounds
+      if (dotX < x || dotX > x + this.width || dotY < y || dotY > y + this.height) {
+        continue;
+      }
 
       const color = this.getItemColor(item);
 
@@ -62,8 +78,14 @@ export class Minimap {
 
     // Draw enemies - larger and more visible
     for (const enemy of enemies) {
-      const dotX = x + enemy.position.x * scaleX;
-      const dotY = y + enemy.position.y * scaleY;
+      const minimapPos = worldToMinimap(enemy.position);
+      const dotX = minimapPos.x;
+      const dotY = minimapPos.y;
+
+      // Skip if outside minimap bounds
+      if (dotX < x || dotX > x + this.width || dotY < y || dotY > y + this.height) {
+        continue;
+      }
 
       const color = enemy.isElite ? '#f4f' : '#f66';
 
@@ -75,9 +97,9 @@ export class Minimap {
       ctx.shadowBlur = 0;
     }
 
-    // Draw player - very bright and prominent
-    const playerX = x + playerPos.x * scaleX;
-    const playerY = y + playerPos.y * scaleY;
+    // Draw player - very bright and prominent (always centered)
+    const playerX = x + this.width / 2;
+    const playerY = y + this.height / 2;
 
     // Outer glow
     ctx.shadowBlur = 8;

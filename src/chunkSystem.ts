@@ -90,8 +90,8 @@ export class ChunkSystem {
       }
     }
 
-    // Generate loot boxes (0-1 per chunk, rare)
-    if (this.seededRandom(chunkX, chunkY, 100) < 0.3) {
+    // Generate loot boxes (0-1 per chunk, very rare)
+    if (this.seededRandom(chunkX, chunkY, 100) < 0.0375) { // 75% reduction from 0.15
       const x = baseX + this.seededRandom(chunkX, chunkY, 101) * this.chunkSize;
       const y = baseY + this.seededRandom(chunkX, chunkY, 102) * this.chunkSize;
       chunk.items.push({

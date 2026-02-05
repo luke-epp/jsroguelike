@@ -106,34 +106,36 @@ export const FONT_LEVELS: FontLevel[] = [
   }
 ];
 
-// Drop rate configuration
+// Drop rate configuration (reduced by 80%)
 export const DROP_RATES = {
   constant: {
-    common: 0.4,
-    uncommon: 0.2,
-    rare: 0.08,
-    legendary: 0.02
+    common: 0.08,      // Reduced from 0.4 (80% reduction)
+    uncommon: 0.04,    // Reduced from 0.2 (80% reduction)
+    rare: 0.016,       // Reduced from 0.08 (80% reduction)
+    legendary: 0.004   // Reduced from 0.02 (80% reduction)
   },
   operator: {
-    world: 0.5, // Chance for operators scattered in level
-    elite: 1.0  // Elite enemies always drop operators
+    world: 0.1,  // Reduced from 0.5 (80% reduction)
+    elite: 1.0   // Elite enemies always drop operators (unchanged)
   },
   equalSign: {
     firstKill: 1.0,
     boss: 1.0,
-    normal: 0.05
+    normal: 0.01 // Reduced from 0.05 (80% reduction)
   }
 };
 
 // Create the default "1" player
 export function createPlayer(): Player {
-  // Create starting weapon: "0" (one type)
+  // Create starting weapon: "1" (one type)
+  // This weapon is locked to slot 0 and cannot be modified
+  // Equal signs add NEW slots (1, 2, 3...) but slot 0 always remains
   const startingWeapon: WeaponInstance = {
-    id: 'weapon_zero',
+    id: 'weapon_starting',
     type: 'one',
     equation: {
       components: [],
-      evaluatedValue: 0
+      evaluatedValue: 1  // Changed from 0 to 1 (represents "one")
     },
     level: 1,
     baseDamage: 10,
@@ -157,7 +159,7 @@ export function createPlayer(): Player {
     inventory: {
       constants: [],
       operators: [],
-      equalSigns: 0
+      equalSigns: 2  // Start with 2 equal signs for slots 0 (locked), 1, 2
     },
     speed: 300
   };

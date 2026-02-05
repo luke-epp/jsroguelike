@@ -80,25 +80,55 @@ export class LevelUpScreen {
       const y = 140;
       const isSelected = index === this.selectedOption;
 
-      // Box background
+      // Box background (taller to fit content)
       renderer.ctx.save();
       renderer.ctx.fillStyle = isSelected ? 'rgba(0, 255, 0, 0.1)' : 'rgba(255, 255, 255, 0.05)';
-      renderer.ctx.fillRect(startX + index * optionWidth + 10, y - 20, optionWidth - 20, 180);
+      renderer.ctx.fillRect(startX + index * optionWidth + 10, y - 20, optionWidth - 20, 220);
       renderer.ctx.strokeStyle = isSelected ? '#0f0' : '#666';
       renderer.ctx.lineWidth = 2;
-      renderer.ctx.strokeRect(startX + index * optionWidth + 10, y - 20, optionWidth - 20, 180);
+      renderer.ctx.strokeRect(startX + index * optionWidth + 10, y - 20, optionWidth - 20, 220);
       renderer.ctx.restore();
 
-      // Number and properties
+      // Number (just the number, not properties)
       renderer.ctx.save();
       renderer.ctx.fillStyle = isSelected ? '#0f0' : '#fff';
-      renderer.ctx.font = isSelected ? 'bold 36px monospace' : 'bold 32px monospace';
+      renderer.ctx.font = isSelected ? 'bold 48px monospace' : 'bold 42px monospace';
       renderer.ctx.textAlign = 'center';
       if (isSelected) {
         renderer.ctx.shadowBlur = 10;
         renderer.ctx.shadowColor = '#0f0';
       }
-      renderer.ctx.fillText(option.displayText, x, y);
+      renderer.ctx.fillText(`${option.number}`, x, y + 10);
+      renderer.ctx.restore();
+
+      // Properties (below the number, smaller font)
+      renderer.ctx.save();
+      renderer.ctx.fillStyle = '#aaa';
+      renderer.ctx.font = '11px monospace';
+      renderer.ctx.textAlign = 'center';
+      const propertiesText = option.properties.length > 0
+        ? option.properties.join(', ')
+        : 'no properties';
+      // Word wrap if too long
+      if (propertiesText.length > 30) {
+        const words = propertiesText.split(', ');
+        const lines: string[] = [];
+        let currentLine = '';
+        words.forEach((word) => {
+          if ((currentLine + ', ' + word).length > 30) {
+            lines.push(currentLine);
+            currentLine = word;
+          } else {
+            currentLine = currentLine ? currentLine + ', ' + word : word;
+          }
+        });
+        if (currentLine) lines.push(currentLine);
+        lines.forEach((line, i) => {
+          renderer.ctx.fillText(line, x, y + 35 + i * 12);
+        });
+      } else {
+        renderer.ctx.fillText(propertiesText, x, y + 35);
+      }
       renderer.ctx.restore();
 
       // Show which weapons will be buffed
@@ -106,7 +136,7 @@ export class LevelUpScreen {
         option.properties.includes(w.type)
       );
 
-      let currentY = y + 30;
+      let currentY = y + 60;
 
       if (matchingWeapons.length > 0) {
         renderer.ctx.save();
@@ -141,7 +171,7 @@ export class LevelUpScreen {
         renderer.ctx.fillStyle = '#ff0';
         renderer.ctx.font = 'bold 12px monospace';
         renderer.ctx.textAlign = 'center';
-        renderer.ctx.fillText(`×${option.damageMultiplier.toFixed(1)} BONUS`, x, y + 130);
+        renderer.ctx.fillText(`×${option.damageMultiplier.toFixed(1)} BONUS`, x, y + 170);
         renderer.ctx.restore();
       }
     });
